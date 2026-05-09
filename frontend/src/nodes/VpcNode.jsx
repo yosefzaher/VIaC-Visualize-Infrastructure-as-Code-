@@ -4,13 +4,29 @@
  * Container node that holds Subnets, SGs, IGWs, etc.
  */
 
-import { Handle, Position, NodeResizer } from "@xyflow/react";
+import { Handle, Position, NodeResizer, useReactFlow } from "@xyflow/react";
 import { VpcIcon } from "../components/icons/AwsIcons";
 
 export default function VpcNode({ id, data, selected }) {
   const name = data?.properties?.name || "VPC";
   const cidr = data?.properties?.cidr || "";
   const color = "var(--color-node-vpc)";
+  const { deleteElements, getNodes } = useReactFlow();
+
+  const handleDelete = (e) => {
+    e.stopPropagation();
+    const all = getNodes();
+    const ids = new Set();
+    const collect = (nid) => {
+      ids.add(nid);
+      for (const n of all) {
+        if (n.parentId === nid) collect(n.id);
+      }
+    };
+    collect(id);
+    const payload = Array.from(ids).map((nid) => ({ id: nid }));
+    deleteElements({ nodes: payload });
+  };
 
   return (
     <>
@@ -23,7 +39,7 @@ export default function VpcNode({ id, data, selected }) {
       />
 
       <div
-        className="w-full h-full rounded-lg border"
+        className="w-full h-full rounded-lg border relative"
         style={{
           borderColor: selected ? color : "var(--color-viac-border)",
           background: "rgba(59, 130, 246, 0.05)",
@@ -31,6 +47,16 @@ export default function VpcNode({ id, data, selected }) {
           minHeight: 250,
         }}
       >
+        <button
+          onClick={handleDelete}
+          className="absolute -top-2 -right-2 w-5 h-5 rounded-full flex items-center justify-center
+                     bg-red-500/80 text-white text-[10px] font-bold
+                     opacity-0 group-hover:opacity-100 hover:bg-red-500 hover:scale-110 z-10 cursor-pointer shadow-lg"
+          title="Delete VPC"
+          style={{ opacity: selected ? 1 : undefined }}
+        >
+          ✕
+        </button>
         {/* ── Header ─────────────────────────────── */}
         <div
           className="flex items-center gap-2 px-3 py-2 rounded-t-lg border-b"

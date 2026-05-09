@@ -8,7 +8,7 @@
  *  • Selection state for properties panel
  */
 
-import { useCallback, useRef, forwardRef, useImperativeHandle } from "react";
+import { useCallback, useRef, forwardRef, useImperativeHandle, useEffect } from "react";
 import {
   ReactFlow,
   Background,
@@ -140,20 +140,38 @@ const Canvas = forwardRef(function Canvas({ onSelectionChange, nodesRef, edgesRe
       // ── Check if dropped inside a group ───────────────────
       let parentId = undefined;
       const existingNodes = reactFlowInstance.getNodes();
+      const nodeMap = new Map(existingNodes.map((n) => [n.id, n]));
 
-      // Find the innermost matching group
+      // Find the innermost matching group and set parentId
+      const computeAbsolutePos = (node) => {
+        let x = node.position?.x || 0;
+        let y = node.position?.y || 0;
+        let cur = node;
+        while (cur?.parentId) {
+          const p = nodeMap.get(cur.parentId);
+          if (!p) break;
+          x += p.position?.x || 0;
+          y += p.position?.y || 0;
+          cur = p;
+        }
+        return { x, y };
+      };
+
+      const matches = [];
       for (const existing of existingNodes) {
         const existingResource = existing.data?.resourceType;
         const accepts = PARENT_ACCEPTS[existingResource];
         if (!accepts || !accepts.includes(resourceType)) continue;
 
-        // Check if drop is inside the group bounds
-        const measured = existing.measured || {};
-        const w = measured.width || config.minWidth || 300;
-        const h = measured.height || config.minHeight || 200;
+        // Prefer measured width/height (React Flow) then explicit style, then config defaults
+        const rawW = existing.width || existing.measured?.width || existing.style?.width;
+        const rawH = existing.height || existing.measured?.height || existing.style?.height;
+        const w = typeof rawW === "string" ? parseInt(rawW, 10) : rawW || config.minWidth || 300;
+        const h = typeof rawH === "string" ? parseInt(rawH, 10) : rawH || config.minHeight || 200;
 
-        const absX = existing.position.x + (existing.parentId ? 0 : 0);
-        const absY = existing.position.y;
+        const abs = computeAbsolutePos(existing);
+        const absX = abs.x;
+        const absY = abs.y;
 
         if (
           position.x >= absX &&
@@ -161,12 +179,44 @@ const Canvas = forwardRef(function Canvas({ onSelectionChange, nodesRef, edgesRe
           position.y >= absY &&
           position.y <= absY + h
         ) {
-          parentId = existing.id;
-          // Adjust position to be relative to parent
-          position.x -= absX;
-          position.y -= absY;
+          // compute nesting depth for tie-breaking (deeper = prefer)
+          let depth = 0;
+          let cur = existing;
+          while (cur?.parentId) {
+            const p = nodeMap.get(cur.parentId);
+            if (!p) break;
+            depth += 1;
+            cur = p;
+          }
+          matches.push({ existing, depth, area: w * h, absX, absY, w, h });
         }
       }
+
+      if (matches.length > 0) {
+        // Prefer deepest (largest depth), then smallest area
+        matches.sort((a, b) => {
+          if (b.depth !== a.depth) return b.depth - a.depth;
+          return a.area - b.area;
+        });
+        const chosen = matches[0];
+        parentId = chosen.existing.id;
+        position.x -= chosen.absX;
+        position.y -= chosen.absY;
+      }
+
+      // Helper: find closest Region ancestor label for a given node id
+      const findRegionLabel = (startId) => {
+        if (!startId) return null;
+        let cur = nodeMap.get(startId);
+        while (cur) {
+          if (cur.data?.resourceType === "aws_region") {
+            return cur.data?.properties?.label || null;
+          }
+          if (!cur.parentId) break;
+          cur = nodeMap.get(cur.parentId);
+        }
+        return null;
+      };
 
       const newNode = {
         id: nodeId,
@@ -188,6 +238,14 @@ const Canvas = forwardRef(function Canvas({ onSelectionChange, nodesRef, edgesRe
           : {}),
       };
 
+      // If dropped inside a Region (or inside a VPC that is inside a Region),
+      // inherit the Region label onto the child's properties so children can
+      // be context-aware (AZ dropdowns, validations, translator hints).
+      const regionLabel = parentId ? findRegionLabel(parentId) : null;
+      if (regionLabel) {
+        newNode.data.properties.region = regionLabel;
+      }
+
       setNodes((nds) => [...nds, newNode]);
       setTimeout(() => onNodesUpdate?.(), 50);
     },
@@ -197,12 +255,81 @@ const Canvas = forwardRef(function Canvas({ onSelectionChange, nodesRef, edgesRe
   // ── Update node data (from properties panel) ──────────────
   const updateNodeData = useCallback(
     (nodeId, newData) => {
-      setNodes((nds) =>
-        nds.map((n) => (n.id === nodeId ? { ...n, data: newData } : n))
-      );
+      setNodes((nds) => {
+        // Update the node itself
+        const updated = nds.map((n) => (n.id === nodeId ? { ...n, data: newData } : n));
+
+        // If a Region node's label changed, propagate the region label to all
+        // descendant nodes so they remain context-aware.
+        const orig = nds.find((n) => n.id === nodeId);
+        if (orig && orig.data?.resourceType === "aws_region") {
+          const oldLabel = orig.data?.properties?.label;
+          const newLabel = newData?.properties?.label;
+          if (oldLabel !== newLabel) {
+            const nodeIndex = new Map(updated.map((n) => [n.id, n]));
+            // Walk all nodes and update those that have this region as an ancestor
+            const shouldUpdate = (n) => {
+              let cur = n;
+              while (cur?.parentId) {
+                if (cur.parentId === nodeId) return true;
+                cur = nodeIndex.get(cur.parentId);
+              }
+              return false;
+            };
+
+            return updated.map((n) => {
+              if (n.id === nodeId) return n;
+              if (shouldUpdate(n)) {
+                return {
+                  ...n,
+                  data: {
+                    ...n.data,
+                    properties: {
+                      ...n.data.properties,
+                      region: newLabel,
+                    },
+                  },
+                };
+              }
+              return n;
+            });
+          }
+        }
+
+        return updated;
+      });
     },
     [setNodes]
   );
+
+  // ── Keyboard deletion: Delete / Backspace to remove selected nodes ──
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.key !== "Delete" && e.key !== "Backspace") return;
+      const selected = nodes.filter((n) => n.selected);
+      if (!selected || selected.length === 0) return;
+
+      // Collect selected ids and all descendants
+      const idsToDelete = new Set(selected.map((s) => s.id));
+      let added = true;
+      while (added) {
+        added = false;
+        for (const n of nodes) {
+          if (!idsToDelete.has(n.id) && n.parentId && idsToDelete.has(n.parentId)) {
+            idsToDelete.add(n.id);
+            added = true;
+          }
+        }
+      }
+
+      setNodes((nds) => nds.filter((n) => !idsToDelete.has(n.id)));
+      setEdges((eds) => eds.filter((edge) => !idsToDelete.has(edge.source) && !idsToDelete.has(edge.target)));
+      onNodesUpdate?.();
+    };
+
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [nodes, setNodes, setEdges, onNodesUpdate]);
 
   // ── Stamp validation errors onto node data for rendering ──
   const setValidationErrors = useCallback(

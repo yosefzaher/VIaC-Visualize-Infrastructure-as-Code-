@@ -8,6 +8,7 @@
  */
 
 import { isAZValidForRegion } from "../config/regionData";
+import NODE_CONFIG from "../config/nodeConfig";
 
 /**
  * Find the parent Region's label for a given node by walking up the
@@ -30,6 +31,70 @@ function findParentRegion(node, nodeMap) {
   return null;
 }
 
+// If parentId-based lookup fails, attempt spatial containment detection.
+function findParentRegionByPosition(node, nodeMap) {
+  // Compute absolute position of a node by walking parent chain
+  const computeAbs = (n) => {
+    let x = n.position?.x || 0;
+    let y = n.position?.y || 0;
+    let cur = n;
+    while (cur?.parentId) {
+      const p = nodeMap.get(cur.parentId);
+      if (!p) break;
+      x += p.position?.x || 0;
+      y += p.position?.y || 0;
+      cur = p;
+    }
+    return { x, y };
+  };
+
+  const nodeAbs = computeAbs(node);
+
+  const candidates = [];
+  for (const [, candidate] of nodeMap) {
+    if (candidate.data?.resourceType !== "aws_region") continue;
+
+    // Determine width/height (prefer measured/width/style, fallback to NODE_CONFIG)
+    const cfg = NODE_CONFIG[candidate.data?.resourceType] || {};
+    const rawW = candidate.width || candidate.measured?.width || candidate.style?.width;
+    const rawH = candidate.height || candidate.measured?.height || candidate.style?.height;
+    const w = typeof rawW === "string" ? parseInt(rawW, 10) : rawW || cfg.minWidth || 400;
+    const h = typeof rawH === "string" ? parseInt(rawH, 10) : rawH || cfg.minHeight || 300;
+
+    const abs = computeAbs(candidate);
+    const absX = abs.x;
+    const absY = abs.y;
+
+    if (
+      nodeAbs.x >= absX &&
+      nodeAbs.x <= absX + w &&
+      nodeAbs.y >= absY &&
+      nodeAbs.y <= absY + h
+    ) {
+      // compute depth for tie-breaking
+      let depth = 0;
+      let cur = candidate;
+      while (cur?.parentId) {
+        const p = nodeMap.get(cur.parentId);
+        if (!p) break;
+        depth += 1;
+        cur = p;
+      }
+      candidates.push({ candidate, depth, area: w * h });
+    }
+  }
+
+  if (candidates.length === 0) return null;
+
+  candidates.sort((a, b) => {
+    if (b.depth !== a.depth) return b.depth - a.depth;
+    return a.area - b.area;
+  });
+
+  const chosen = candidates[0].candidate;
+  return chosen.data?.properties?.label || null;
+}
+
 /**
  * Validate all nodes on the canvas.
  *
@@ -48,7 +113,8 @@ export function validateCanvas(nodes) {
     // ── AZ-Region validation for Subnets ────────────────────
     if (resourceType === "aws_subnet") {
       const az = node.data?.properties?.availability_zone;
-      const parentRegion = findParentRegion(node, nodeMap);
+      // Try parentId chain first, then spatial containment as fallback
+      const parentRegion = findParentRegion(node, nodeMap) || findParentRegionByPosition(node, nodeMap);
 
       if (parentRegion && az) {
         if (!isAZValidForRegion(az, parentRegion)) {
@@ -57,6 +123,10 @@ export function validateCanvas(nodes) {
             `Valid AZs: ${parentRegion}a, ${parentRegion}b, ...`
           );
         }
+      }
+      // If no parentRegion but AZ is set, still warn the user that region is unknown
+      if (!parentRegion && az) {
+        nodeErrors.push(`No parent Region detected for Subnet with AZ "${az}".`);
       }
     }
 

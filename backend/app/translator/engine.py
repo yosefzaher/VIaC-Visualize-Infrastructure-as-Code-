@@ -157,6 +157,32 @@ def resolve_references(resources: list[dict[str, Any]]) -> list[dict[str, Any]]:
             res["properties"],
             f"{res['resource_type']}({res['node_id']})",
         )
+        # Coerce certain property shapes so Jinja2 templates receive
+        # the expected types (e.g., cidr_blocks must be a list).
+        def _ensure_list_of_strings(val):
+            if val is None:
+                return None
+            if isinstance(val, list):
+                return [str(x) for x in val]
+            if isinstance(val, str):
+                # Allow comma-separated lists in the UI: "a,b,c"
+                parts = [p.strip() for p in val.split(",") if p.strip()]
+                return parts if parts else [val]
+            return [str(val)]
+
+        if res["resource_type"] == "aws_security_group":
+            # Normalize ingress_rules / egress_rules shapes
+            for rules_key in ("ingress_rules", "egress_rules"):
+                rules = new_props.get(rules_key)
+                if isinstance(rules, list):
+                    for r in rules:
+                        if not isinstance(r, dict):
+                            continue
+                        if "cidr_blocks" in r:
+                            r["cidr_blocks"] = _ensure_list_of_strings(r["cidr_blocks"])
+                        else:
+                            r["cidr_blocks"] = ["0.0.0.0/0"]
+
         resolved.append({**res, "properties": new_props})
 
     return resolved

@@ -1,4 +1,4 @@
-import { Handle, Position, NodeResizer } from "@xyflow/react";
+import { Handle, Position, NodeResizer, useReactFlow } from "@xyflow/react";
 import { SubnetIcon } from "../components/icons/AwsIcons";
 
 export default function SubnetNode({ id, data, selected }) {
@@ -8,6 +8,22 @@ export default function SubnetNode({ id, data, selected }) {
   const isPublic = data?.properties?.public;
   const hasError = data?._validationError;
   const color = hasError ? "#ef4444" : "var(--color-node-subnet)";
+  const { deleteElements, getNodes } = useReactFlow();
+
+  const handleDelete = (e) => {
+    e.stopPropagation();
+    const all = getNodes();
+    const ids = new Set();
+    const collect = (nid) => {
+      ids.add(nid);
+      for (const n of all) {
+        if (n.parentId === nid) collect(n.id);
+      }
+    };
+    collect(id);
+    const payload = Array.from(ids).map((nid) => ({ id: nid }));
+    deleteElements({ nodes: payload });
+  };
 
   return (
     <>
@@ -20,7 +36,7 @@ export default function SubnetNode({ id, data, selected }) {
       />
 
       <div
-        className="w-full h-full rounded-lg border border-dashed"
+        className="w-full h-full rounded-lg border border-dashed relative"
         style={{
           borderColor: hasError ? "#ef4444" : selected ? "var(--color-node-subnet)" : "var(--color-viac-border)",
           borderWidth: hasError ? 2 : 1,
@@ -29,6 +45,16 @@ export default function SubnetNode({ id, data, selected }) {
           minHeight: 150,
         }}
       >
+        <button
+          onClick={handleDelete}
+          className="absolute -top-2 -right-2 w-5 h-5 rounded-full flex items-center justify-center
+                     bg-red-500/80 text-white text-[10px] font-bold
+                     opacity-0 group-hover:opacity-100 hover:bg-red-500 hover:scale-110 z-10 cursor-pointer shadow-lg"
+          title="Delete Subnet"
+          style={{ opacity: selected ? 1 : undefined }}
+        >
+          ✕
+        </button>
         <div
           className="flex items-center gap-2 px-3 py-1.5 rounded-t-lg border-b border-dashed"
           style={{ borderColor: "var(--color-viac-border)" }}
