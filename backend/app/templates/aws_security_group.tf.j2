@@ -1,0 +1,87 @@
+# ──────────────────────────────────────────────────────────────
+# VIaC – Jinja2 → HCL  Terraform Template: AWS Security Group
+# ──────────────────────────────────────────────────────────────
+# Injected by the engine:
+#   • node_id        (str)  – Terraform resource identifier
+# Properties:
+#   • name           (str)  – Human-readable name (used in tags)
+#   • description    (str)  – SG description
+#   • vpc_id         (str)  – VPC ID or ref:node_id.id
+#   • ingress_rules  (list) – List of ingress rule dicts (optional)
+#   • egress_rules   (list) – List of egress rule dicts (optional)
+#   • environment    (str)  – Environment tag (default: "dev")
+#   • tags           (dict) – Optional extra tags
+#
+# Default rules: SSH (22) and HTTP (80) inbound, all outbound.
+# Override by providing ingress_rules / egress_rules lists.
+# ──────────────────────────────────────────────────────────────
+
+resource "aws_security_group" "{{ node_id }}" {
+  name        = "{{ name | default(node_id) }}"
+  description = "{{ description | default('Managed by VIaC') }}"
+  vpc_id      = {{ vpc_id | hcl_value }}
+
+{% if ingress_rules is defined and ingress_rules %}
+{% for rule in ingress_rules %}
+  ingress {
+    description = "{{ rule.description | default('Custom rule') }}"
+    from_port   = {{ rule.from_port }}
+    to_port     = {{ rule.to_port }}
+    protocol    = {{ rule.protocol | default('tcp') | hcl_value }}
+    cidr_blocks = {{ rule.cidr_blocks | default(['0.0.0.0/0']) | hcl_value }}
+  }
+
+{% endfor %}
+{% else %}
+  ingress {
+    description = "Allow SSH"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "Allow HTTP"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+{% endif %}
+{% if egress_rules is defined and egress_rules %}
+{% for rule in egress_rules %}
+  egress {
+    description = "{{ rule.description | default('Custom rule') }}"
+    from_port   = {{ rule.from_port }}
+    to_port     = {{ rule.to_port }}
+    protocol    = {{ rule.protocol | default('-1') | hcl_value }}
+    cidr_blocks = {{ rule.cidr_blocks | default(['0.0.0.0/0']) | hcl_value }}
+  }
+
+{% endfor %}
+{% else %}
+  egress {
+    description = "Allow all outbound"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+{% endif %}
+  tags = {
+    Name        = "{{ name | default(node_id) }}"
+    ManagedBy   = "VIaC"
+    Environment = "{{ environment | default('dev') }}"
+{% for key, value in (tags | default({})).items() %}
+    {{ key }} = "{{ value }}"
+{% endfor %}
+  }
+}
+
+output "sg_id_{{ node_id }}" {
+  description = "The Security Group ID of '{{ node_id }}' created by VIaC"
+  value       = aws_security_group.{{ node_id }}.id
+}

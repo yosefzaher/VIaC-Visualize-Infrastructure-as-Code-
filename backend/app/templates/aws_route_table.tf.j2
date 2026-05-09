@@ -1,0 +1,29 @@
+# ──────────────────────────────────────────────────────────────
+# VIaC – Jinja2 → HCL  Terraform Template: AWS Route Table
+# ──────────────────────────────────────────────────────────────
+# Injected by the engine:
+#   • node_id      (str)  – Terraform resource identifier
+# Properties:
+#   • name         (str)  – Human-readable name (used in tags)
+#   • vpc_id       (str)  – VPC ID or ref:node_id.id
+#   • environment  (str)  – Environment tag (default: "dev")
+#   • tags         (dict) – Optional extra tags
+# ──────────────────────────────────────────────────────────────
+
+resource "aws_route_table" "{{ node_id }}" {
+  vpc_id = {{ vpc_id | hcl_value }}
+
+  tags = {
+    Name        = "{{ name | default(node_id) }}"
+    ManagedBy   = "VIaC"
+    Environment = "{{ environment | default('dev') }}"
+{% for key, value in (tags | default({})).items() %}
+    {{ key }} = "{{ value }}"
+{% endfor %}
+  }
+}
+
+output "rt_id_{{ node_id }}" {
+  description = "The Route Table ID of '{{ node_id }}' created by VIaC"
+  value       = aws_route_table.{{ node_id }}.id
+}

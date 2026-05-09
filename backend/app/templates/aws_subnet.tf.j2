@@ -1,0 +1,35 @@
+# ──────────────────────────────────────────────────────────────
+# VIaC – Jinja2 → HCL  Terraform Template: AWS Subnet
+# ──────────────────────────────────────────────────────────────
+# Injected by the engine:
+#   • node_id            (str)  – Terraform resource identifier
+# Properties:
+#   • name               (str)  – Human-readable name (used in tags)
+#   • vpc_id             (str)  – VPC ID or ref:node_id.id
+#   • cidr               (str)  – Subnet CIDR block
+#   • availability_zone  (str)  – AZ, e.g. "us-east-1a"
+#   • public             (bool) – Map public IP on launch (default: false)
+#   • environment        (str)  – Environment tag (default: "dev")
+#   • tags               (dict) – Optional extra tags
+# ──────────────────────────────────────────────────────────────
+
+resource "aws_subnet" "{{ node_id }}" {
+  vpc_id                  = {{ vpc_id | hcl_value }}
+  cidr_block              = {{ cidr | hcl_value }}
+  availability_zone       = {{ availability_zone | hcl_value }}
+  map_public_ip_on_launch = {{ (public | default(false)) | hcl_value }}
+
+  tags = {
+    Name        = "{{ name | default(node_id) }}"
+    ManagedBy   = "VIaC"
+    Environment = "{{ environment | default('dev') }}"
+{% for key, value in (tags | default({})).items() %}
+    {{ key }} = "{{ value }}"
+{% endfor %}
+  }
+}
+
+output "subnet_id_{{ node_id }}" {
+  description = "The ID of Subnet '{{ node_id }}' created by VIaC"
+  value       = aws_subnet.{{ node_id }}.id
+}

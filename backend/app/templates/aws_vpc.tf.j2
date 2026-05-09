@@ -1,0 +1,36 @@
+# ──────────────────────────────────────────────────────────────
+# VIaC – Jinja2 → HCL  Terraform Template: AWS VPC
+# ──────────────────────────────────────────────────────────────
+# Injected by the engine:
+#   • node_id      (str)  – Terraform resource identifier
+# Properties:
+#   • name         (str)  – Human-readable name (used in tags)
+#   • cidr         (str)  – CIDR block, e.g. "10.0.0.0/16"
+#   • environment  (str)  – Environment tag (default: "dev")
+#   • tags         (dict) – Optional extra tags
+# ──────────────────────────────────────────────────────────────
+
+resource "aws_vpc" "{{ node_id }}" {
+  cidr_block           = {{ cidr | hcl_value }}
+  enable_dns_support   = true
+  enable_dns_hostnames = true
+
+  tags = {
+    Name        = "{{ name | default(node_id) }}"
+    ManagedBy   = "VIaC"
+    Environment = "{{ environment | default('dev') }}"
+{% for key, value in (tags | default({})).items() %}
+    {{ key }} = "{{ value }}"
+{% endfor %}
+  }
+}
+
+output "vpc_id_{{ node_id }}" {
+  description = "The ID of VPC '{{ node_id }}' created by VIaC"
+  value       = aws_vpc.{{ node_id }}.id
+}
+
+output "vpc_cidr_{{ node_id }}" {
+  description = "The CIDR block of VPC '{{ node_id }}'"
+  value       = aws_vpc.{{ node_id }}.cidr_block
+}

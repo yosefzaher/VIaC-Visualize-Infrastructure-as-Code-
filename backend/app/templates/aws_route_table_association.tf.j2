@@ -1,0 +1,14 @@
+# ──────────────────────────────────────────────────────────────
+# VIaC – Jinja2 → HCL  Terraform Template: AWS Route Table Association
+# ──────────────────────────────────────────────────────────────
+# Injected by the engine:
+#   • node_id          (str) – Terraform resource identifier
+# Properties:
+#   • subnet_id        (str) – Subnet ID or ref:node_id.id
+#   • route_table_id   (str) – Route Table ID or ref:node_id.id
+# ──────────────────────────────────────────────────────────────
+
+resource "aws_route_table_association" "{{ node_id }}" {
+  subnet_id      = {{ subnet_id | hcl_value }}
+  route_table_id = {{ route_table_id | hcl_value }}
+}

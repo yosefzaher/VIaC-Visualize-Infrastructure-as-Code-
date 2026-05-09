@@ -1,0 +1,22 @@
+# ──────────────────────────────────────────────────────────────
+# VIaC – Jinja2 → HCL  Terraform Template: AWS Route
+# ──────────────────────────────────────────────────────────────
+# Injected by the engine:
+#   • node_id              (str) – Terraform resource identifier
+# Properties:
+#   • route_table_id       (str) – Route Table ID or ref:node_id.id
+#   • destination_cidr     (str) – Destination CIDR (default: "0.0.0.0/0")
+#   • gateway_id           (str) – IGW ID or ref:node_id.id (optional)
+#   • nat_gateway_id       (str) – NAT GW ID or ref:node_id.id (optional)
+# ──────────────────────────────────────────────────────────────
+
+resource "aws_route" "{{ node_id }}" {
+  route_table_id         = {{ route_table_id | hcl_value }}
+  destination_cidr_block = {{ destination_cidr | default('0.0.0.0/0') | hcl_value }}
+{% if gateway_id is defined and gateway_id %}
+  gateway_id             = {{ gateway_id | hcl_value }}
+{% endif %}
+{% if nat_gateway_id is defined and nat_gateway_id %}
+  nat_gateway_id         = {{ nat_gateway_id | hcl_value }}
+{% endif %}
+}

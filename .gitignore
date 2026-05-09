@@ -1,0 +1,65 @@
+# --- Terraform ---
+# Local object confidence and provider plugins
+.terraform/
+**/.terraform/*
+
+# Terraform state files (CRITICAL: Contains sensitive infrastructure data)
+*.tfstate
+*.tfstate.*
+
+# Terraform lock file
+.terraform.lock.hcl
+
+# Terraform variables and sensitive credential files
+*.tfvars
+*.tfvars.json
+
+# --- Python (FastAPI) ---
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+env/
+.venv/
+build/
+dist/
+
+# Environment variables (CRITICAL: Contains AWS Access Keys)
+.env
+
+# --- Project Specific (VIaC) ---
+# Ignore generated Terraform files in the workspace but keep the directory
+backend/terraform_workspace/*.tf
+backend/terraform_workspace/*.tfplan
+backend/terraform_workspace/*.tfstate
+backend/terraform_workspace/*.tfstate.backup
+
+# Ignore SSH keys potentially stored in project directory
+*.pem
+*.ppk
+
+# --- Frontend (React) ---
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Production build
+/frontend/build
+/frontend/dist
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# --- OS Specific ---
+.DS_Store
+.DS_Store?
+atach/
+._*
+Thumbs.db
+desktop.ini
