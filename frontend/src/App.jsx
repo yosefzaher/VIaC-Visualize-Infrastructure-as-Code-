@@ -27,7 +27,8 @@ export default function App() {
   const edgesRef = useRef([]);
   const canvasRef = useRef(null);
 
-  const { plan, apply, destroy, loading, action, logs, clearLogs } = useDeployment();
+  const { plan, apply, destroy, render, loading, action, logs, clearLogs } = useDeployment();
+  const [hclPreview, setHclPreview] = useState("");
 
   // ── Run validation whenever nodes change ──────────────────
   const runValidation = useCallback(() => {
@@ -49,7 +50,7 @@ export default function App() {
   }, []);
 
   // ── Toolbar actions ───────────────────────────────────────
-  const handlePlan = useCallback(() => {
+  const handlePlan = useCallback(async () => {
     runValidation();
 
     // Re-check after validation
@@ -69,10 +70,14 @@ export default function App() {
       alert("Drop some resources onto the canvas first!");
       return;
     }
-    plan(payload);
+    const data = await plan(payload);
+    if (data?.diagnostics && data.diagnostics.length > 0) {
+      // stamp diagnostics onto canvas nodes
+      canvasRef.current?.setValidationErrors(data.diagnostics);
+    }
   }, [buildPayload, plan, runValidation]);
 
-  const handleApply = useCallback(() => {
+  const handleApply = useCallback(async () => {
     runValidation();
 
     const { errors, hasErrors } = validateCanvas(nodesRef.current);
@@ -91,7 +96,10 @@ export default function App() {
       return;
     }
     if (window.confirm("This will provision real AWS resources. Continue?")) {
-      apply(payload);
+      const data = await apply(payload);
+      if (data?.diagnostics && data.diagnostics.length > 0) {
+        canvasRef.current?.setValidationErrors(data.diagnostics);
+      }
     }
   }, [buildPayload, apply, runValidation]);
 
@@ -100,6 +108,29 @@ export default function App() {
       destroy();
     }
   }, [destroy]);
+
+  const handleDownload = useCallback(async () => {
+    const payload = buildPayload();
+    if (payload.resources.length === 0) {
+      alert("Drop some resources onto the canvas first!");
+      return;
+    }
+    const data = await render(payload);
+    if (!data || !data.hcl) {
+      alert("Could not render HCL for download.");
+      return;
+    }
+    setHclPreview(data.hcl);
+    const blob = new Blob([data.hcl], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "main.tf";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }, [buildPayload, render]);
 
   // ── Update node from properties panel ─────────────────────
   const handleUpdateNode = useCallback(
@@ -132,6 +163,7 @@ export default function App() {
           onPlan={handlePlan}
           onApply={handleApply}
           onDestroy={handleDestroy}
+          onDownload={handleDownload}
           loading={loading}
           action={action}
           hasErrors={validationErrors.size > 0}
@@ -161,7 +193,7 @@ export default function App() {
         </div>
 
         {/* ── Bottom: Terminal ────────────────────── */}
-        <TerminalConsole logs={logs} onClear={clearLogs} />
+        <TerminalConsole logs={logs} onClear={clearLogs} hcl={hclPreview} />
       </div>
     </ReactFlowProvider>
   );

@@ -306,6 +306,14 @@ const Canvas = forwardRef(function Canvas({ onSelectionChange, nodesRef, edgesRe
   useEffect(() => {
     const handler = (e) => {
       if (e.key !== "Delete" && e.key !== "Backspace") return;
+
+      // Ignore when focus is inside an input/textarea/select or a contentEditable element
+      const tgt = e.target || document.activeElement;
+      const tag = (tgt && tgt.tagName && tgt.tagName.toLowerCase && tgt.tagName.toLowerCase()) || null;
+      if (tag === "input" || tag === "textarea" || tag === "select" || (tgt && tgt.isContentEditable)) {
+        return;
+      }
+
       const selected = nodes.filter((n) => n.selected);
       if (!selected || selected.length === 0) return;
 
@@ -334,11 +342,40 @@ const Canvas = forwardRef(function Canvas({ onSelectionChange, nodesRef, edgesRe
   // ── Stamp validation errors onto node data for rendering ──
   const setValidationErrors = useCallback(
     (errors) => {
+      // errors can be either:
+      //  - Map<nodeId, [messages]>  (frontend validation)
+      //  - Array of diagnostics [{ node_id, message, ... }] (backend)
       setNodes((nds) =>
-        nds.map((n) => ({
-          ...n,
-          data: { ...n.data, _validationError: errors.has(n.id) },
-        }))
+        nds.map((n) => {
+          let hasErr = false;
+          let msg = null;
+
+          if (Array.isArray(errors)) {
+            const found = errors.find((d) => d.node_id === n.id || d.nodeId === n.id);
+            if (found) {
+              hasErr = true;
+              msg = found.message || found.msg || String(found);
+            }
+          } else if (errors instanceof Map) {
+            hasErr = errors.has(n.id);
+            if (hasErr) {
+              const val = errors.get(n.id);
+              msg = Array.isArray(val) ? val.join("; ") : String(val);
+            }
+          } else if (errors && typeof errors === "object") {
+            // treat as plain object map
+            if (errors[n.id]) {
+              hasErr = true;
+              const val = errors[n.id];
+              msg = Array.isArray(val) ? val.join("; ") : String(val);
+            }
+          }
+
+          return {
+            ...n,
+            data: { ...n.data, _validationError: hasErr, _errorMessage: msg },
+          };
+        })
       );
     },
     [setNodes]

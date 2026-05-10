@@ -47,11 +47,38 @@ export default function useDeployment() {
         data.success ? "success" : "error",
         data.success ? "✓ Plan completed successfully" : "✗ Plan failed"
       );
+      // If backend returned structured diagnostics, log them for visibility
+      if (data.diagnostics && Array.isArray(data.diagnostics) && data.diagnostics.length > 0) {
+        addLog("error", "─── Diagnostics ───");
+        data.diagnostics.forEach((d) => {
+          const id = d.node_id || d.nodeId || d.nodeId;
+          addLog("error", `${id}: ${d.message || d.resource_address || JSON.stringify(d)}`);
+        });
+      }
       return data;
     } catch (err) {
       const msg = err.response?.data?.detail || err.message;
       addLog("error", `✗ Plan error: ${msg}`);
       setResult({ success: false, error: msg });
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, [addLog]);
+
+  const render = useCallback(async (payload) => {
+    setLoading(true);
+    setAction("render");
+    addLog("info", "▶ Rendering HCL preview...");
+    try {
+      const { data } = await api.post("/render", payload);
+      if (data?.hcl) {
+        addLog("stdout", data.hcl);
+      }
+      return data;
+    } catch (err) {
+      const msg = err.response?.data?.detail || err.message;
+      addLog("error", `✗ Render error: ${msg}`);
       return null;
     } finally {
       setLoading(false);
@@ -84,6 +111,13 @@ export default function useDeployment() {
         data.success ? "success" : "error",
         data.success ? "✓ Apply completed successfully" : "✗ Apply failed"
       );
+      if (data.diagnostics && Array.isArray(data.diagnostics) && data.diagnostics.length > 0) {
+        addLog("error", "─── Diagnostics ───");
+        data.diagnostics.forEach((d) => {
+          const id = d.node_id || d.nodeId || d.nodeId;
+          addLog("error", `${id}: ${d.message || d.resource_address || JSON.stringify(d)}`);
+        });
+      }
       return data;
     } catch (err) {
       const msg = err.response?.data?.detail || err.message;
@@ -125,5 +159,5 @@ export default function useDeployment() {
     }
   }, [addLog]);
 
-  return { plan, apply, destroy, loading, action, result, logs, clearLogs };
+  return { plan, apply, destroy, render, loading, action, result, logs, clearLogs };
 }

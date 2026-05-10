@@ -4,7 +4,7 @@
  * Plan / Apply / Destroy action buttons.
  */
 
-export default function Toolbar({ onPlan, onApply, onDestroy, loading, action, hasErrors }) {
+export default function Toolbar({ onPlan, onApply, onDestroy, onDownload, loading, action, hasErrors }) {
   return (
     <div className="h-12 bg-viac-panel border-b border-viac-border flex items-center justify-between px-4">
       {/* ── Left: Title ──────────────────────────── */}
@@ -29,6 +29,14 @@ export default function Toolbar({ onPlan, onApply, onDestroy, loading, action, h
 
       {/* ── Right: Action Buttons ────────────────── */}
       <div className="flex items-center gap-2">
+        <button
+          onClick={onDownload}
+          disabled={loading}
+          className="px-3 py-1.5 rounded-md text-xs font-semibold transition-all duration-150 border border-viac-border text-viac-muted hover:text-viac-text disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          ↓ Download .tf
+        </button>
+
         <button
           onClick={onPlan}
           disabled={loading}

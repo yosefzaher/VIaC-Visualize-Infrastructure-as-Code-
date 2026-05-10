@@ -86,6 +86,21 @@ class TerraformStepResult(BaseModel):
     stderr: str
 
 
+class TerraformDiagnostic(BaseModel):
+    """Diagnostic information mapping a Terraform resource to a canvas node.
+
+    node_id: canvas node identifier (matches Terraform resource name)
+    resource_address: Terraform resource address (e.g. aws_subnet.subnet_3)
+    message: human-readable error message extracted from Terraform stderr
+    severity: 'error' | 'warning'
+    """
+
+    node_id: str
+    resource_address: str
+    message: str
+    severity: str = Field(default="error")
+
+
 class PlanResponse(BaseModel):
     """Full response returned by ``POST /plan`` (plan only)."""
 
@@ -96,6 +111,7 @@ class PlanResponse(BaseModel):
     )
     init_result: TerraformStepResult
     plan_result: TerraformStepResult
+    diagnostics: list[TerraformDiagnostic] = Field(default_factory=list)
 
 
 class ApplyResponse(BaseModel):
@@ -112,6 +128,7 @@ class ApplyResponse(BaseModel):
         default_factory=dict,
         description="Parsed terraform output values (e.g. vpc_id, vpc_cidr).",
     )
+    diagnostics: list[TerraformDiagnostic] = Field(default_factory=list)
 
 
 class DestroyResponse(BaseModel):

@@ -233,7 +233,7 @@ def render_deployment(
     resources: list[dict[str, Any]],
     *,
     region: str = "us-east-1",
-) -> str:
+) -> tuple[str, dict[str, dict[str, int]]]:
     """Render multiple resources into a single, aggregated HCL string.
 
     Steps:
@@ -255,6 +255,7 @@ def render_deployment(
     resolved = resolve_references(resources)
 
     sections: list[str] = []
+    resource_banners: list[tuple[str, str, str]] = []  # (node_id, rtype, banner)
 
     # ── 2. Provider block (rendered once) ────────────────────
     provider_tmpl = _jinja_env.get_template(_PROVIDER_TEMPLATE)
@@ -278,13 +279,39 @@ def render_deployment(
         rendered = render_template(rtype, context)
         sections.append(rendered)
 
+        resource_banners.append((node_id, rtype, banner))
+
     aggregated = "\n".join(sections)
+
+    # Build a line-based map: node_id -> {start_line, end_line, resource_type}
+    line_map: dict[str, dict[str, int]] = {}
+    total_lines = aggregated.count("\n") + 1
+
+    for i, (node_id, rtype, banner) in enumerate(resource_banners):
+        pos = aggregated.find(banner)
+        if pos == -1:
+            continue
+        start_line = aggregated.count("\n", 0, pos) + 1
+        # End line is before next banner or EOF
+        if i + 1 < len(resource_banners):
+            next_banner = resource_banners[i + 1][2]
+            next_pos = aggregated.find(next_banner, pos + 1)
+            end_line = aggregated.count("\n", 0, next_pos) if next_pos != -1 else total_lines
+        else:
+            end_line = total_lines
+
+        line_map[node_id] = {
+            "start_line": start_line,
+            "end_line": end_line,
+            "resource_type": rtype,
+        }
+
     logger.info(
         "Aggregated %d resource(s) into a single HCL document (%d chars)",
         len(resources),
         len(aggregated),
     )
-    return aggregated
+    return aggregated, line_map
 
 
 # ── File writing ────────────────────────────────────────────
@@ -332,7 +359,7 @@ def translate_deployment(
     region: str = "us-east-1",
     filename: str = "main.tf",
     output_dir: Path | str | None = None,
-) -> Path:
+) -> tuple[Path, dict[str, dict[str, int]]]:
     """Render a full deployment (provider + N resources) and write.
 
     This is the primary entry point used by the ``/plan`` and
@@ -341,6 +368,7 @@ def translate_deployment(
     Returns:
         Path to the written ``main.tf``.
     """
-    hcl = render_deployment(resources, region=region)
-    return write_terraform_file(hcl, filename=filename, output_dir=output_dir)
+    hcl, line_map = render_deployment(resources, region=region)
+    path = write_terraform_file(hcl, filename=filename, output_dir=output_dir)
+    return path, line_map
 

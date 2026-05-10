@@ -92,7 +92,7 @@ export default function SubnetNode({ id, data, selected }) {
         {hasError && (
           <div className="px-3 py-1">
             <span className="text-[9px] text-red-400 font-semibold">
-              ⛔ AZ mismatch with Region
+              ⛔ {data?._errorMessage || "AZ mismatch with Region"}
             </span>
           </div>
         )}
